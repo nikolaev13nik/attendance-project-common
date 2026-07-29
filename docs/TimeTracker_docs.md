@@ -104,5 +104,5 @@ The system consists of **5 core microservices**:
 └── Emails Company Admin with AI Executive Summary & Trend Report
 
 
-
+link to flow: https://miro.com/app/board/uXjVKx0Hn0E=/?share_link_id=148596222016
 
