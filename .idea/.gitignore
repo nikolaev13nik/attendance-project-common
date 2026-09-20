@@ -9,7 +9,3 @@
 /dataSources/
 /dataSources.local.xml
 
-.idea/
-*.iml
-out/
-target/
