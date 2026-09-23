@@ -30,5 +30,125 @@ services:                                    # every container is one entry unde
       retries: 10                            # 10 consecutive failures -> marked unhealthy
       start_period: 10s                      # grace window at startup; failures here don't count
 
+  kafka:                                     # DNS name "kafka" for the other containers
+    image: apache/kafka:4.3.1                 # official Apache image; KRaft built in, no ZooKeeper needed
+    container_name: attendance-kafka
+    restart: "no"
+
+    environment:
+      # --- identity of this node in the cluster ---
+      KAFKA_NODE_ID: 1                        # unique id; we only have one node
+      KAFKA_PROCESS_ROLES: broker,controller  # "combined mode": one process is both. Fine for dev, not prod
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093   # who elects the leader: node 1, reachable at kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER    # which listener below is the controller one
+
+      # --- the three doors into this broker ---
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094   # ports it BINDS to
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094  # addresses it HANDS OUT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT    # brokers talk to each other over this one
+
+      # --- single-node settings: without these Kafka wants 3 replicas and won't start ---
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0      # don't wait 3s before rebalancing; faster dev startup
+
+      KAFKA_LOG_DIRS: /var/lib/kafka/data     # where messages are stored -> matches the volume below
+
+    ports:
+      - "9094:9094"                           # only the EXTERNAL listener is published to your Mac
+
+    volumes:
+      - kafkadata:/var/lib/kafka/data         # topics + messages survive `docker compose down`
+
+    healthcheck:
+      # scripts are NOT on PATH in this image, so use the full path
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s                       # the JVM needs time; don't fail it during startup
+
+  accounting:                                # DNS name "accounting" for the other containers
+    build:                                   # BUILD from source instead of pulling a ready image
+      context: ../Attendance-Accounting      # folder sent to the daemon (the "build context")
+      dockerfile: Dockerfile.dev             # our multi-stage file; also picks Dockerfile.dev.dockerignore
+    image: accounting:local                  # name to tag the built image with
+    container_name: attendance-accounting
+    restart: "no"
+
+    environment:
+      # --- the shared signing secret; identical value in timetracking ---
+      ATTENDANCE_ACCOUNTING_JWT_SECRET: ${JWT_SECRET}
+
+      # --- database: overrides the H2 settings in application.properties ---
+      # "postgres" is the SERVICE NAME above, resolved by Compose's DNS.
+      # currentSchema pins Hibernate's CREATE TABLE to the accounting schema.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/attendance?currentSchema=accounting
+      SPRING_DATASOURCE_USERNAME: accounting_user          # the restricted user, NOT postgres
+      SPRING_DATASOURCE_PASSWORD: ${ACCOUNTING_DB_PASSWORD}
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+      SPRING_JPA_DATABASE_PLATFORM: org.hibernate.dialect.PostgreSQLDialect
+
+    ports:
+      - "8081:8080"                          # app listens on 8080 inside; reachable at localhost:8081
+
+    depends_on:
+      postgres:
+        condition: service_healthy           # wait for pg_isready to pass, not just for the container to exist
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s                      # Spring Boot is slow to start; don't fail it during warm-up
+
+  timetracking:                              # DNS name "timetracking"
+    build:
+      context: ../Attendance-TimeTracking
+      dockerfile: Dockerfile.dev
+    image: timetracking:local
+    container_name: attendance-timetracking
+    restart: "no"
+
+    environment:
+      # --- SAME secret value as accounting, or every request here gets 401 ---
+      ATTENDANCE_ACCOUNTING_JWT_SECRET: ${JWT_SECRET}
+
+      # --- service-to-service call: SERVICE NAME + CONTAINER port ---
+      # not localhost, and not 8081 (that port only exists on your Mac)
+      ATTENDANCE_ACCOUNTING_BASE_URL: http://accounting:8080
+
+      # --- Kafka: the internal listener, advertised as kafka:9092 ---
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+
+      # --- database: same server, same database, DIFFERENT schema and user ---
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/attendance?currentSchema=timetracking
+      SPRING_DATASOURCE_USERNAME: timetracking_user
+      SPRING_DATASOURCE_PASSWORD: ${TIMETRACKING_DB_PASSWORD}
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+      SPRING_JPA_DATABASE_PLATFORM: org.hibernate.dialect.PostgreSQLDialect
+
+    ports:
+      - "8082:8080"                          # both apps listen on 8080 internally; only host ports differ
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy           # the Stream binder needs a reachable broker at startup
+      accounting:
+        condition: service_healthy           # documents the dependency; see note below
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
 volumes:
   pgdata:                                    # declares the named volume; Docker manages where it lives
+  kafkadata:                                 # same, for Kafka's message log
