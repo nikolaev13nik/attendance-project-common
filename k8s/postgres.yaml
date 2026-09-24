@@ -1,0 +1,113 @@
+# Postgres: three objects in one file, separated by "---".
+# Compose equivalent: the single `postgres:` service block.
+#   volumes: pgdata     -> PersistentVolumeClaim
+#   image/environment   -> Deployment
+#   DNS name "postgres" -> Service
+
+apiVersion: v1
+kind: PersistentVolumeClaim          # a REQUEST for storage; the cluster provisions the actual disk
+metadata:
+  name: postgres-pvc
+  namespace: attendance
+spec:
+  accessModes:
+    - ReadWriteOnce                  # mountable read-write by ONE node at a time (fine: single replica)
+  resources:
+    requests:
+      storage: 2Gi                   # how much to allocate; local-path can't expand later
+  # storageClassName omitted on purpose -> uses the cluster default (local-path)
+
+---
+apiVersion: apps/v1                  # Deployments live in the "apps" group, not core "v1"
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: attendance
+spec:
+  replicas: 1                        # exactly one Postgres; NEVER scale this - they'd fight over the disk
+
+  strategy:
+    type: Recreate                   # kill the old pod BEFORE starting the new one.
+                                     # Default (RollingUpdate) would deadlock: the new pod waits for the
+                                     # ReadWriteOnce volume that the old pod still holds.
+
+  selector:
+    matchLabels:
+      app: postgres                  # which pods this Deployment owns...
+  template:                          # ...and the template it stamps them out from
+    metadata:
+      labels:
+        app: postgres                # MUST match the selector above, or the Deployment is rejected
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine  # same image as Compose
+
+          ports:
+            - containerPort: 5432    # documentation only, like EXPOSE; the Service does the real work
+
+          env:
+            - name: POSTGRES_USER
+              value: postgres        # a literal value
+
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata   # data in a SUBDIRECTORY of the mount - see notes
+
+            - name: POSTGRES_PASSWORD
+              valueFrom:             # ...instead of a literal, read from the Secret
+                secretKeyRef:
+                  name: attendance-secrets      # the Secret object created in Step 11
+                  key: POSTGRES_PASSWORD        # which key inside it
+
+            - name: ACCOUNTING_DB_PASSWORD      # consumed by init-db.sh, not by Postgres itself
+              valueFrom:
+                secretKeyRef:
+                  name: attendance-secrets
+                  key: ACCOUNTING_DB_PASSWORD
+
+            - name: TIMETRACKING_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: attendance-secrets
+                  key: TIMETRACKING_DB_PASSWORD
+
+          volumeMounts:              # where the volumes declared below appear inside the container
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d   # same convention as Compose: runs on first boot
+
+          readinessProbe:            # "can this pod receive traffic?" - failing = removed from the Service
+            exec:
+              command: ["sh", "-c", "pg_isready -U postgres"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+          livenessProbe:             # "is this pod broken?" - failing = kubelet RESTARTS the container
+            exec:
+              command: ["sh", "-c", "pg_isready -U postgres"]
+            initialDelaySeconds: 30  # generous: a restart loop during startup would be worse than waiting
+            periodSeconds: 10
+
+      volumes:                       # pod-level volume definitions, referenced by volumeMounts above
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-pvc  # the PVC declared at the top of this file
+        - name: init
+          configMap:
+            name: postgres-init      # created by command from init-db.sh - see the checkpoint
+            defaultMode: 0755        # make the script executable
+
+---
+apiVersion: v1
+kind: Service                        # a stable name + virtual IP in front of the pods
+metadata:
+  name: postgres                     # THIS is the DNS name. It's why POSTGRES_HOST: postgres works.
+  namespace: attendance
+spec:
+  type: ClusterIP                    # reachable only inside the cluster (the default)
+  selector:
+    app: postgres                    # sends traffic to any pod carrying this label
+  ports:
+    - port: 5432                     # the port the Service listens on
+      targetPort: 5432               # the port on the pod to forward to
