@@ -46,6 +46,14 @@ spec:
           ports:
             - containerPort: 5432    # documentation only, like EXPOSE; the Service does the real work
 
+          resources:                 # COMPUTE resources - unrelated to "API resources"
+            requests:                # GUARANTEED. The scheduler reserves this much on the node.
+              memory: "128Mi"        #   measured idle usage was ~98Mi
+              cpu: "50m"             #   50 millicores = 0.05 of a core; measured ~10m idle
+            limits:                  # HARD CAP.
+              memory: "512Mi"        #   exceed this -> the container is OOMKilled
+              cpu: "500m"            #   exceed this -> THROTTLED, not killed
+
           env:
             - name: POSTGRES_USER
               value: postgres        # a literal value
