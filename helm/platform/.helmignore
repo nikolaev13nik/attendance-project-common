@@ -1,0 +1,8 @@
+# Files matched here are excluded when the chart is packaged (`helm package`).
+# Same syntax as .gitignore.
+.DS_Store
+.git/
+.idea/
+*.tmproj
+*.swp
+*.bak

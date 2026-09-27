@@ -1,0 +1,12 @@
+apiVersion: v2                 # chart FORMAT version. v2 = Helm 3 and 4. Not your app's version.
+name: attendance-platform      # the chart's name; used in default object names and in `helm list`
+description: Shared infrastructure for the Attendance system - namespace, config, Postgres, Kafka, Ingress
+type: application              # "application" = deployable. ("library" = reusable helpers only, not deployable)
+
+# Version of THE CHART. Bump this when you change anything under templates/ or values.yaml.
+# Must be semver.
+version: 0.1.0
+
+# Version of the APPLICATION this chart deploys. For a platform chart there is no single
+# app, so this tracks the infrastructure set. Quoted, because 16 would be a number.
+appVersion: "16"

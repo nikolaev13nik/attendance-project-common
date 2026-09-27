@@ -21,7 +21,8 @@ services:                                    # every container is one entry unde
 
     volumes:
       - pgdata:/var/lib/postgresql/data      # named volume -> the database survives `docker compose down`
-      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro   # bind mount, read-only; runs on FIRST boot
+      # Single source of truth, shared with the Helm chart (which reads it via .Files.Get).
+      - ./helm/platform/files/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro   # read-only; runs on FIRST boot
 
     healthcheck:                             # how Docker decides this service is "healthy"
       test: ["CMD-SHELL", "pg_isready -U postgres"]  # command run INSIDE the container; exit 0 = healthy

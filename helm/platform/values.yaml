@@ -1,0 +1,78 @@
+# DEFAULT values for the platform chart.
+#
+# Every hardcoded number and string that used to live in k8s/*.yaml appears here
+# instead. Templates read them as {{ .Values.<path> }}.
+#
+# Precedence, lowest to highest:
+#   this file  <  -f values-local.yaml  <  --set key=value
+#
+# Defaults here describe the LOCAL k3s setup, so `helm install` with no extra
+# arguments reproduces what you already have running.
+
+# -----------------------------------------------------------------------------
+# namespace
+# -----------------------------------------------------------------------------
+namespace:
+  # create: false is the normal choice in real clusters, where the namespace is
+  # made by a platform team or Terraform before any chart is installed.
+  create: true
+  name: attendance
+
+config:
+  name: attendance-config          # service charts reference THIS name - it's the contract
+  database: attendance             # the single database; each service uses its own schema
+  postgresHost: postgres           # must match the Postgres Service name below
+  postgresPort: "5432"             # QUOTED - ConfigMap values must be strings
+  driverClassName: org.postgresql.Driver
+  jpaDialect: org.hibernate.dialect.PostgreSQLDialect
+  accountingBaseUrl: http://accounting:8080   # Service name + CONTAINER port, never localhost
+  kafkaBootstrapServers: kafka:9092           # Kafka's INTERNAL listener
+
+secret:
+  name: attendance-secrets
+
+postgres:
+  # enabled: false on AWS - RDS replaces the pod, and only config.postgresHost changes.
+  # This one flag is what lets ONE chart serve local and cloud.
+  enabled: true
+
+  image: postgres:16-alpine
+  user: postgres
+
+  persistence:
+    size: 2Gi
+    storageClass: ""               # "" = use the cluster default (local-path on k3s, gp3 on EKS)
+
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
+kafka:
+  enabled: true                    # false on AWS -> MSK
+
+  image: apache/kafka:4.3.1
+
+  # Pinned below the memory limit on purpose: heap is only part of a JVM's footprint.
+  heapOpts: "-Xmx768m -Xms256m"
+
+  persistence:
+    size: 2Gi
+    storageClass: ""
+
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 200m
+    limits:
+      memory: 1536Mi
+      cpu: 1000m
+
+ingress:
+  enabled: true
+  className: traefik               # "alb" on EKS with the AWS Load Balancer Controller
+  host: attendance.local           # a real DNS name in any non-local environment
+  annotations: {}                  # ALB needs several; empty here
