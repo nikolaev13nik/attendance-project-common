@@ -1,0 +1,142 @@
+{{- /* Whole file conditional: --set kafka.enabled=false on AWS, where MSK replaces it. */ -}}
+{{- if .Values.kafka.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kafka-pvc
+  namespace: {{ .Values.namespace.name }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.kafka.persistence.size }}
+  {{- with .Values.kafka.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate                   # ReadWriteOnce volume; RollingUpdate would deadlock
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      securityContext:
+        runAsUser: 1000              # the image's appuser
+        runAsGroup: 1000
+        fsGroup: 1000                # kubelet chowns the PV; Docker volumes inherited it for free
+
+      containers:
+        - name: kafka
+          image: {{ .Values.kafka.image }}
+
+          ports:
+            - containerPort: 9092
+              name: internal
+            - containerPort: 9094
+              name: external
+
+          env:
+            - name: KAFKA_NODE_ID
+              value: "1"
+            - name: KAFKA_PROCESS_ROLES
+              value: broker,controller
+
+            # localhost, NOT the Service name: a Service only routes to READY pods,
+            # so kafka:9093 would deadlock (not ready until started, can't start
+            # until it reaches its own controller).
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: 1@localhost:9093
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: CONTROLLER
+
+            - name: KAFKA_LISTENERS
+              value: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+
+            # What the broker HANDS OUT to clients. The internal one must be the
+            # Service name so pods can reach it; the external one is for
+            # `kubectl port-forward` from your Mac.
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: PLAINTEXT://{{ .Values.kafka.serviceName }}:9092,EXTERNAL://localhost:9094
+
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: PLAINTEXT
+
+            # Single node: Kafka defaults its internal topics to 3 replicas and
+            # refuses to start.
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
+              value: "0"
+
+            - name: KAFKA_LOG_DIRS
+              value: /var/lib/kafka/data
+            - name: KAFKA_HEAP_OPTS
+              value: {{ .Values.kafka.heapOpts | quote }}
+
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/kafka/data
+
+          resources:
+            {{- toYaml .Values.kafka.resources | nindent 12 }}
+
+          # TCP, not exec. An exec probe running kafka-topics.sh boots a whole JVM
+          # (10-15s here), timed out every time, and the liveness probe kept
+          # restarting a perfectly healthy broker.
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+
+          livenessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 120   # far later than readiness - never restart a slow broker
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: kafka-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.kafka.serviceName }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  type: ClusterIP
+  selector:
+    app: kafka
+  ports:
+    - name: internal
+      port: 9092
+      targetPort: 9092
+    - name: external
+      port: 9094
+      targetPort: 9094
+{{- end }}

@@ -1,4 +1,0 @@
-apiVersion: v1                 # which API group/version this object belongs to; core objects are just "v1"
-kind: Namespace                # the type of object being declared
-metadata:
-  name: attendance             # a virtual cluster inside the cluster: our objects live here, away from kube-system
