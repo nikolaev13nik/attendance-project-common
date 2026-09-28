@@ -1,0 +1,20 @@
+# Explicit "I am deploying to local k3s" marker.
+#
+# It is nearly empty ON PURPOSE. values.yaml's defaults already describe the
+# local setup (postgres/kafka as pods, traefik ingress, local-path storage),
+# so there is almost nothing left to override here.
+#
+# Passing this file changes no behaviour at all compared to passing no -f
+# flag. Its only job is to make the intent explicit and symmetrical with
+# values-aws.yaml, so a deploy command always names its target:
+#
+#   helm upgrade --install platform ./platform -n attendance -f values-local.yaml
+#   helm upgrade --install platform ./platform -n attendance -f values-aws.yaml
+#
+# Nobody has to remember "no flag means local" - it says so on the command line.
+
+namespace:
+  # Locally, YOU are the platform team - the chart itself may as well create
+  # the namespace. This restates values.yaml's own default; listed here only
+  # so the local/aws contrast is visible by reading the two files side by side.
+  create: true
