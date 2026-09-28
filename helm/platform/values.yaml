@@ -54,6 +54,10 @@ postgres:
 kafka:
   enabled: true                    # false on AWS -> MSK
 
+  # The Service name. MUST match the host part of config.kafkaBootstrapServers,
+  # and it is also what the broker advertises to pods.
+  serviceName: kafka
+
   image: apache/kafka:4.3.1
 
   # Pinned below the memory limit on purpose: heap is only part of a JVM's footprint.
@@ -76,3 +80,14 @@ ingress:
   className: traefik               # "alb" on EKS with the AWS Load Balancer Controller
   host: attendance.local           # a real DNS name in any non-local environment
   annotations: {}                  # ALB needs several; empty here
+
+  # A LIST, walked with `range` in the template. Adding a third service later is
+  # one entry here instead of a template edit - that is the point of templating
+  # a list rather than hardcoding two blocks.
+  paths:
+    - path: /account
+      service: accounting          # the Service created by the accounting chart
+      port: 8080
+    - path: /attendance
+      service: timetracking
+      port: 8080
