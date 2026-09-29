@@ -82,7 +82,7 @@ services:                                    # every container is one entry unde
     environment:
       # --- the shared signing secret; identical value in timetracking ---
       ATTENDANCE_ACCOUNTING_JWT_SECRET: ${JWT_SECRET}
-
+      ATTENDANCE_ACCOUNTING_BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD}
       # --- database: overrides the H2 settings in application.properties ---
       # "postgres" is the SERVICE NAME above, resolved by Compose's DNS.
       # currentSchema pins Hibernate's CREATE TABLE to the accounting schema.
