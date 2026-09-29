@@ -13,9 +13,26 @@
 # namespace
 # -----------------------------------------------------------------------------
 namespace:
-  # create: false is the normal choice in real clusters, where the namespace is
-  # made by a platform team or Terraform before any chart is installed.
-  create: true
+  # Defaults to FALSE, for two reasons - both verified on this cluster, 2026-09-28:
+  #
+  # 1. A chart cannot bootstrap the namespace its own release lives in. Helm
+  #    writes its release record (a Secret) into the namespace BEFORE applying
+  #    any template, so an absent namespace fails with
+  #      Error: create: failed to create: namespaces "attendance" not found
+  #    The normal path is therefore `helm install --create-namespace`, which
+  #    creates it as a pre-step (and stamps Helm ownership metadata on it, so
+  #    this template would adopt it cleanly rather than conflict).
+  #
+  # 2. The deciding reason: with create=true the Namespace becomes a RELEASE
+  #    RESOURCE, so `helm uninstall` DELETES it - and everything inside it.
+  #    That includes the hand-created attendance-secrets Secret and both PVCs,
+  #    and on k3s local-path (reclaimPolicy: Delete) the Postgres data directory
+  #    is removed from disk. Verified: uninstall put the namespace in Terminating.
+  #    Leaving the namespace outside the release makes uninstall survivable.
+  #
+  # Set it to true only for a throwaway namespace you genuinely want destroyed
+  # together with the release.
+  create: false
   name: attendance
 
 config:

@@ -14,7 +14,9 @@
 # Nobody has to remember "no flag means local" - it says so on the command line.
 
 namespace:
-  # Locally, YOU are the platform team - the chart itself may as well create
-  # the namespace. This restates values.yaml's own default; listed here only
-  # so the local/aws contrast is visible by reading the two files side by side.
-  create: true
+  # Deliberately false, same as values.yaml and same as AWS. Locally you are the
+  # platform team, but you still do not want `helm uninstall` to delete the
+  # namespace and take the Secret and the Postgres PVC with it.
+  # Create it once with `kubectl create namespace attendance`, or with
+  # `helm install --create-namespace`. See values.yaml for the full reasoning.
+  create: false
