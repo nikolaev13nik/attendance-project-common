@@ -68,12 +68,30 @@ helm upgrade --install platform ./platform \
 
 `--wait` matters here, see the failure mode below.
 
-### 4. The two services (still raw manifests — until they get their own charts)
+### 4. The two service charts
+
+Each service owns its own chart, in its own repo. They are separate Helm releases,
+so each can be upgraded and rolled back independently of the other and of the
+platform.
 
 ```bash
-kubectl apply -f ../../Attendance-Accounting/k8s/accounting.yaml
-kubectl apply -f ../../Attendance-TimeTracking/k8s/timetracking.yaml
+helm upgrade --install accounting ~/IdeaProjects/Attendance-Accounting/helm/accounting \
+  --namespace attendance --set image.tag=1.0.4 \
+  --wait --timeout 10m
+
+helm upgrade --install timetracking ~/IdeaProjects/Attendance-TimeTracking/helm/timetracking \
+  --namespace attendance --set image.tag=1.0.12 \
+  --wait --timeout 10m
 ```
+
+`--set image.tag` rather than a version committed in a manifest: that is what keeps
+a deploy from being a git change, which would otherwise trigger CI and build yet
+another version. The chart falls back to `Chart.yaml`'s `appVersion` when the flag
+is omitted.
+
+The timeout is generous because the images are ~500MB and are pulled from GHCR on
+first use. That pull happens *before* the container starts, so it is not on the
+startup probe's clock.
 
 ---
 
@@ -92,6 +110,27 @@ no further action — order is convenience, not correctness.
 
 `--wait` converts this silent success into a visible timeout failure, which is what
 you want in a pipeline.
+
+**Verified end to end on 2026-09-30**, by tearing the whole system down and
+rebuilding it from an empty cluster. Observed, in order:
+
+1. `kubectl create namespace attendance` — the chart cannot do this, because Helm
+   writes its release record into the namespace before applying any template.
+2. Platform chart installed with the Secret deliberately absent and **no** `--wait`:
+   `helm list` showed `STATUS: deployed, REVISION 1`, while `postgres` sat in
+   `CreateContainerConfigError: secret "attendance-secrets" not found`. Kafka came
+   up healthy, because it reads no secrets — the failure is scoped to what is
+   genuinely missing.
+3. `kubectl create secret ... --from-env-file=../.env` — postgres reached `1/1
+   Running` on its own, **keeping the same pod name**. The pod object was never
+   wrong; only container creation failed, and the kubelet retries that on a backoff.
+   No rollout, no restart, no second command.
+4. Both service charts installed **with** `--wait`, which held the release in
+   `pending-install` until the pods passed their probes.
+5. `POST /account/login` through the Ingress returned 200; that token was then
+   accepted by TimeTracking, while the same request without it returned 401.
+
+Total objects recreated: 9 from the platform chart, 2 from each service chart.
 
 ---
 
