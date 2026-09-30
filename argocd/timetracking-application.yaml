@@ -1,0 +1,43 @@
+# Argo CD Application for the TimeTracking service.
+#
+# Same shape as accounting-application.yaml - only repoURL and the two names
+# differ, because both services are deployed identically. That symmetry is the
+# point: one pattern, repeated per service.
+#
+#   kubectl apply -f argocd/timetracking-application.yaml
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: timetracking
+  namespace: argocd          # the Application record lives with Argo CD...
+
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/nikolaev13nik/Attendance-TimeTracking.git
+    targetRevision: main
+    path: helm/timetracking
+
+    # No image.tag override here either: the version comes from Chart.yaml's
+    # appVersion in the service's own repo, so the repo that owns the code also
+    # owns which build runs. Deploying = bump appVersion, commit, push.
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: attendance    # ...but the workload goes here, beside accounting
+
+  # Automated from the start, unlike accounting: the manual-first progression was
+  # worth doing once, to see the diff before it was applied. Having seen it, there
+  # is no reason to repeat it.
+  #
+  #   prune     - delete objects that disappear from git
+  #   selfHeal  - revert anything that makes the cluster differ from git, in seconds
+  #
+  # After this, `helm upgrade` and `kubectl edit` against timetracking are undone
+  # automatically. Git is the only way to change it.
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
