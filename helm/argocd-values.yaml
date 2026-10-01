@@ -1,63 +1,21 @@
-# Values for the THIRD-PARTY argo-cd chart (argo/argo-cd, chart 10.9.4, app v3.5.3).
-#
-# The chart is not ours and is not vendored into this repo - Helm pulls it from
-# https://argoproj.github.io/argo-helm. Only this file is ours, which is the normal
-# way to consume someone else's chart: keep your values in git, pull the chart by
-# version at install time.
-#
-#   helm repo add argo https://argoproj.github.io/argo-helm
-#   helm upgrade --install argocd argo/argo-cd --version 10.9.4 \
-#     -n argocd --create-namespace -f helm/argocd-values.yaml
-#
-# Argo CD holds almost no state of its own: desired state is the git repo, actual
-# state is the cluster, and its Redis is a cache rebuilt on boot. So a laptop
-# shutdown is harmless - nothing here needs a PersistentVolume.
-
-# -----------------------------------------------------------------------------
-# Trim the install. The full chart runs 7 components; a single-cluster learning
-# setup needs 4. Each of these off saves memory on a 3-cpu / 11.7Gi node that is
-# already running Postgres, Kafka and two JVMs.
-# -----------------------------------------------------------------------------
 dex:
-  enabled: false          # SSO via OIDC/SAML/GitHub. Local login is enough here.
+  enabled: false
 
 notifications:
-  enabled: false          # Slack/email on sync events. Nothing to notify yet.
+  enabled: false
 
 applicationSet:
-  # Templates MANY Applications from one definition - useful with dozens of apps;
-  # we declare ours by hand, so it is dead weight here.
-  #
-  # NOTE: this chart has NO `applicationSet.enabled` key. It was set to false here
-  # at first and Helm ACCEPTED IT SILENTLY - no error, no warning, STATUS: deployed
-  # - and installed the controller anyway. Helm ignores unknown values keys by
-  # default, so a typo like `resorces:` would likewise be swallowed and the
-  # container would silently get no limits.
-  #
-  # The only protection is to verify the EFFECT rather than trust the install:
-  # `helm template ... | grep` for what you expected, or check the running pods.
-  # Some charts ship a values.schema.json, which does make Helm reject unknown
-  # keys; this one does not.
-  replicas: 0             # scale to zero - the Deployment exists but runs nothing
+  replicas: 0
 
 configs:
   params:
-    # Serve plain HTTP instead of self-signed HTTPS.
-    #
-    # By default argocd-server terminates its own TLS with a self-signed cert. Put
-    # an Ingress in front of that and you get the classic "502 / bad gateway" -
-    # Traefik speaks HTTP to the backend, the backend answers in TLS.
-    #
-    # `insecure` is the documented fix when something else terminates TLS. On a
-    # laptop over http://argocd.local that something else is nothing at all, which
-    # is fine locally and NOT fine anywhere real.
     server.insecure: true
 
 server:
   ingress:
     enabled: true
-    ingressClassName: traefik      # k3s ships Traefik; same class the app Ingress uses
-    hostname: argocd.local         # needs a line in /etc/hosts, like attendance.local
+    ingressClassName: traefik
+    hostname: argocd.local
     path: /
     pathType: Prefix
 
@@ -69,8 +27,6 @@ server:
       cpu: 500m
       memory: 256Mi
 
-# The brain: watches git, compares against the cluster, decides what is OutOfSync.
-# Gets the largest budget of the four because it holds the cluster state cache.
 controller:
   resources:
     requests:
@@ -80,8 +36,6 @@ controller:
       cpu: 1000m
       memory: 1Gi
 
-# Clones repos and renders manifests (runs `helm template` for Helm sources).
-# Needs enough memory to hold a checkout plus the rendered output.
 repoServer:
   resources:
     requests:
@@ -91,7 +45,6 @@ repoServer:
       cpu: 500m
       memory: 512Mi
 
-# Cache only. Losing it on restart costs a re-sync, not data.
 redis:
   resources:
     requests:

@@ -1,8 +1,3 @@
-{{- /*
-  The ENTIRE file is wrapped in postgres.enabled.
-  On AWS: --set postgres.enabled=false and none of this renders, because RDS
-  replaces it. Only config.postgresHost changes for the services.
-*/ -}}
 {{- if .Values.postgres.enabled }}
 apiVersion: v1
 kind: ConfigMap
@@ -10,10 +5,6 @@ metadata:
   name: postgres-init
   namespace: {{ .Values.namespace.name }}
 data:
-  # .Files.Get reads a file from INSIDE the chart directory. This replaces the
-  # manual `kubectl create configmap postgres-init --from-file=init-db.sh`.
-  # indent 8 lines it up under the YAML block scalar below; get it wrong and the
-  # rendered YAML is invalid.
   init-db.sh: |
 {{ .Files.Get "files/init-db.sh" | indent 8 }}
 
@@ -29,9 +20,7 @@ spec:
   resources:
     requests:
       storage: {{ .Values.postgres.persistence.size }}
-  {{- /* Only emit storageClassName when a value is set. "" means "cluster default"
-         (local-path on k3s, gp3 on EKS) - and emitting an empty string would be
-         wrong, so the field must be absent rather than blank. */}}
+
   {{- with .Values.postgres.persistence.storageClass }}
   storageClassName: {{ . }}
   {{- end }}
@@ -43,9 +32,9 @@ metadata:
   name: postgres
   namespace: {{ .Values.namespace.name }}
 spec:
-  replicas: 1                        # never more than 1: they would fight over the volume
+  replicas: 1
   strategy:
-    type: Recreate                   # kill before create; RollingUpdate deadlocks on ReadWriteOnce
+    type: Recreate
   selector:
     matchLabels:
       app: postgres
@@ -65,14 +54,14 @@ spec:
             - name: POSTGRES_USER
               value: {{ .Values.postgres.user }}
             - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata   # subdirectory: initdb refuses a non-empty mount root
+              value: /var/lib/postgresql/data/pgdata
 
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secret.name }}
                   key: POSTGRES_PASSWORD
-            - name: ACCOUNTING_DB_PASSWORD           # consumed by init-db.sh, not by Postgres
+            - name: ACCOUNTING_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secret.name }}
@@ -117,7 +106,6 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  # Must equal config.postgresHost, or the services cannot resolve the database.
   name: {{ .Values.config.postgresHost }}
   namespace: {{ .Values.namespace.name }}
 spec:

@@ -1,56 +1,21 @@
-# DEFAULT values for the platform chart.
-#
-# Every hardcoded number and string that used to live in k8s/*.yaml appears here
-# instead. Templates read them as {{ .Values.<path> }}.
-#
-# Precedence, lowest to highest:
-#   this file  <  -f values-local.yaml  <  --set key=value
-#
-# Defaults here describe the LOCAL k3s setup, so `helm install` with no extra
-# arguments reproduces what you already have running.
-
-# -----------------------------------------------------------------------------
-# namespace
-# -----------------------------------------------------------------------------
 namespace:
-  # Defaults to FALSE, for two reasons - both verified on this cluster, 2026-09-28:
-  #
-  # 1. A chart cannot bootstrap the namespace its own release lives in. Helm
-  #    writes its release record (a Secret) into the namespace BEFORE applying
-  #    any template, so an absent namespace fails with
-  #      Error: create: failed to create: namespaces "attendance" not found
-  #    The normal path is therefore `helm install --create-namespace`, which
-  #    creates it as a pre-step (and stamps Helm ownership metadata on it, so
-  #    this template would adopt it cleanly rather than conflict).
-  #
-  # 2. The deciding reason: with create=true the Namespace becomes a RELEASE
-  #    RESOURCE, so `helm uninstall` DELETES it - and everything inside it.
-  #    That includes the hand-created attendance-secrets Secret and both PVCs,
-  #    and on k3s local-path (reclaimPolicy: Delete) the Postgres data directory
-  #    is removed from disk. Verified: uninstall put the namespace in Terminating.
-  #    Leaving the namespace outside the release makes uninstall survivable.
-  #
-  # Set it to true only for a throwaway namespace you genuinely want destroyed
-  # together with the release.
   create: false
   name: attendance
 
 config:
-  name: attendance-config          # service charts reference THIS name - it's the contract
-  database: attendance             # the single database; each service uses its own schema
-  postgresHost: postgres           # must match the Postgres Service name below
-  postgresPort: "5432"             # QUOTED - ConfigMap values must be strings
+  name: attendance-config
+  database: attendance
+  postgresHost: postgres
+  postgresPort: "5432"
   driverClassName: org.postgresql.Driver
   jpaDialect: org.hibernate.dialect.PostgreSQLDialect
-  accountingBaseUrl: http://accounting:8080   # Service name + CONTAINER port, never localhost
-  kafkaBootstrapServers: kafka:9092           # Kafka's INTERNAL listener
+  accountingBaseUrl: http://accounting:8080
+  kafkaBootstrapServers: kafka:9092
 
 secret:
   name: attendance-secrets
 
 postgres:
-  # enabled: false on AWS - RDS replaces the pod, and only config.postgresHost changes.
-  # This one flag is what lets ONE chart serve local and cloud.
   enabled: true
 
   image: postgres:16-alpine
@@ -58,7 +23,7 @@ postgres:
 
   persistence:
     size: 2Gi
-    storageClass: ""               # "" = use the cluster default (local-path on k3s, gp3 on EKS)
+    storageClass: ""
 
   resources:
     requests:
@@ -69,15 +34,12 @@ postgres:
       cpu: 500m
 
 kafka:
-  enabled: true                    # false on AWS -> MSK
+  enabled: true
 
-  # The Service name. MUST match the host part of config.kafkaBootstrapServers,
-  # and it is also what the broker advertises to pods.
   serviceName: kafka
 
   image: apache/kafka:4.3.1
 
-  # Pinned below the memory limit on purpose: heap is only part of a JVM's footprint.
   heapOpts: "-Xmx768m -Xms256m"
 
   persistence:
@@ -94,16 +56,13 @@ kafka:
 
 ingress:
   enabled: true
-  className: traefik               # "alb" on EKS with the AWS Load Balancer Controller
-  host: attendance.local           # a real DNS name in any non-local environment
-  annotations: {}                  # ALB needs several; empty here
+  className: traefik
+  host: attendance.local
+  annotations: {}
 
-  # A LIST, walked with `range` in the template. Adding a third service later is
-  # one entry here instead of a template edit - that is the point of templating
-  # a list rather than hardcoding two blocks.
   paths:
     - path: /account
-      service: accounting          # the Service created by the accounting chart
+      service: accounting
       port: 8080
     - path: /attendance
       service: timetracking

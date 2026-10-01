@@ -1,22 +1,2 @@
-# Explicit "I am deploying to local k3s" marker.
-#
-# It is nearly empty ON PURPOSE. values.yaml's defaults already describe the
-# local setup (postgres/kafka as pods, traefik ingress, local-path storage),
-# so there is almost nothing left to override here.
-#
-# Passing this file changes no behaviour at all compared to passing no -f
-# flag. Its only job is to make the intent explicit and symmetrical with
-# values-aws.yaml, so a deploy command always names its target:
-#
-#   helm upgrade --install platform ./platform -n attendance -f values-local.yaml
-#   helm upgrade --install platform ./platform -n attendance -f values-aws.yaml
-#
-# Nobody has to remember "no flag means local" - it says so on the command line.
-
 namespace:
-  # Deliberately false, same as values.yaml and same as AWS. Locally you are the
-  # platform team, but you still do not want `helm uninstall` to delete the
-  # namespace and take the Secret and the Postgres PVC with it.
-  # Create it once with `kubectl create namespace attendance`, or with
-  # `helm install --create-namespace`. See values.yaml for the full reasoning.
   create: false

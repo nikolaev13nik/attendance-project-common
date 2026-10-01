@@ -1,11 +1,3 @@
-{{- /*
-  Wrapped in a conditional: in a real cluster the namespace usually already exists,
-  created by a platform team or Terraform. Then you install with
-  --set namespace.create=false and Helm simply renders nothing here.
-
-  The {{- and -}} dashes trim surrounding whitespace, so a disabled block leaves
-  no stray blank lines in the rendered output.
-*/ -}}
 {{- if .Values.namespace.create }}
 apiVersion: v1
 kind: Namespace

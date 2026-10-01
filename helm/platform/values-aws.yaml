@@ -1,50 +1,22 @@
-# Overrides for deploying this SAME chart to Amazon EKS.
-#
-# Only keys that actually differ from values.yaml appear here. Everything
-# else - image names, health-probe settings, resource shapes - is identical
-# in both environments and stays in values.yaml untouched.
-#
-#   helm upgrade --install platform ./platform -n attendance -f values-aws.yaml
-
 namespace:
-  # On a real cluster, a platform team (or Terraform) creates namespaces
-  # centrally, often with quotas and network policies attached. The chart
-  # should not assume it is allowed to create one - so it does not try.
   create: false
 
 config:
-  # Managed Postgres. The port is unchanged (still 5432) so it is not
-  # repeated here - only the host actually differs.
   postgresHost: attendance-db.abc123xyz.eu-west-1.rds.amazonaws.com
 
-  # Managed Kafka gives three broker endpoints for availability; a client
-  # only needs one to discover the rest, but listing all three means the
-  # app can still connect if that first broker is temporarily unreachable.
   kafkaBootstrapServers: "b-1.attendance.abc123.c2.kafka.eu-west-1.amazonaws.com:9096,b-2.attendance.abc123.c2.kafka.eu-west-1.amazonaws.com:9096"
 
 postgres:
-  # RDS replaces this pod entirely. No Deployment, no PVC, no Postgres
-  # Service render at all - see postgres.yaml's whole-file {{- if }}.
   enabled: false
 
 kafka:
-  # MSK replaces this pod entirely, same mechanism as postgres.enabled above.
   enabled: false
 
 ingress:
-  # k3s ships Traefik built in; EKS has no default ingress controller, so a
-  # real cluster there runs the AWS Load Balancer Controller instead, which
-  # watches for this class name.
   className: alb
 
-  # A public DNS name that actually resolves, instead of the local-only
-  # attendance.local (which only your own /etc/hosts or kubefwd knows about).
   host: attendance.example.com
 
   annotations:
-    # Tells the AWS Load Balancer Controller to provision an internet-facing
-    # Application Load Balancer rather than one reachable only inside the VPC.
     alb.ingress.kubernetes.io/scheme: internet-facing
-    # ALB targets pod IPs directly via the VPC CNI, instead of routing through
-    # a Kubernetes Service's ClusterIP first - lower latency, one less hop.
     alb.ingress.kubernetes.io/target-type: ip

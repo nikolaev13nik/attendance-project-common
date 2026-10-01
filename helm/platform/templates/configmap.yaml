@@ -1,7 +1,6 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  # Every value that was hardcoded in k8s/configmap.yaml is now a parameter.
   name: {{ .Values.config.name }}
   namespace: {{ .Values.namespace.name }}
 
@@ -12,7 +11,4 @@ data:
   KAFKA_BOOTSTRAP_SERVERS: {{ .Values.config.kafkaBootstrapServers }}
   POSTGRES_HOST: {{ .Values.config.postgresHost }}
 
-  # | quote forces quotation marks in the OUTPUT. Without it, values.yaml's "5432"
-  # renders as a bare 5432, which Kubernetes rejects because ConfigMap values must
-  # be strings. Use quote for anything that looks like a number or a boolean.
   POSTGRES_PORT: {{ .Values.config.postgresPort | quote }}

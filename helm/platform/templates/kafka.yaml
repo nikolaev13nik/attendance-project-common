@@ -1,4 +1,3 @@
-{{- /* Whole file conditional: --set kafka.enabled=false on AWS, where MSK replaces it. */ -}}
 {{- if .Values.kafka.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -24,7 +23,7 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate                   # ReadWriteOnce volume; RollingUpdate would deadlock
+    type: Recreate
   selector:
     matchLabels:
       app: kafka
@@ -34,9 +33,9 @@ spec:
         app: kafka
     spec:
       securityContext:
-        runAsUser: 1000              # the image's appuser
+        runAsUser: 1000
         runAsGroup: 1000
-        fsGroup: 1000                # kubelet chowns the PV; Docker volumes inherited it for free
+        fsGroup: 1000
 
       containers:
         - name: kafka
@@ -54,9 +53,6 @@ spec:
             - name: KAFKA_PROCESS_ROLES
               value: broker,controller
 
-            # localhost, NOT the Service name: a Service only routes to READY pods,
-            # so kafka:9093 would deadlock (not ready until started, can't start
-            # until it reaches its own controller).
             - name: KAFKA_CONTROLLER_QUORUM_VOTERS
               value: 1@localhost:9093
             - name: KAFKA_CONTROLLER_LISTENER_NAMES
@@ -65,9 +61,6 @@ spec:
             - name: KAFKA_LISTENERS
               value: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
 
-            # What the broker HANDS OUT to clients. The internal one must be the
-            # Service name so pods can reach it; the external one is for
-            # `kubectl port-forward` from your Mac.
             - name: KAFKA_ADVERTISED_LISTENERS
               value: PLAINTEXT://{{ .Values.kafka.serviceName }}:9092,EXTERNAL://localhost:9094
 
@@ -76,8 +69,6 @@ spec:
             - name: KAFKA_INTER_BROKER_LISTENER_NAME
               value: PLAINTEXT
 
-            # Single node: Kafka defaults its internal topics to 3 replicas and
-            # refuses to start.
             - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
               value: "1"
             - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
@@ -99,9 +90,6 @@ spec:
           resources:
             {{- toYaml .Values.kafka.resources | nindent 12 }}
 
-          # TCP, not exec. An exec probe running kafka-topics.sh boots a whole JVM
-          # (10-15s here), timed out every time, and the liveness probe kept
-          # restarting a perfectly healthy broker.
           readinessProbe:
             tcpSocket:
               port: 9092
@@ -112,7 +100,7 @@ spec:
           livenessProbe:
             tcpSocket:
               port: 9092
-            initialDelaySeconds: 120   # far later than readiness - never restart a slow broker
+            initialDelaySeconds: 120
             periodSeconds: 30
             timeoutSeconds: 3
             failureThreshold: 3

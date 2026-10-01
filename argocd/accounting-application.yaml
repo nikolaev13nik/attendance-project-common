@@ -1,81 +1,23 @@
-# An Argo CD "Application" - a custom resource type that only exists because
-# installing Argo CD added three CustomResourceDefinitions to the cluster.
-# `kubectl get applications -n argocd` works for the same reason
-# `kubectl get deployments` does: the API server was taught a new kind.
-#
-# It says: "keep THIS path in THIS git repo continuously applied to THIS namespace."
-#
-#   kubectl apply -f argocd/accounting-application.yaml
-
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: accounting
-  # The Application object lives in argocd's namespace, NOT in the namespace it
-  # deploys to. It is a record for Argo CD, not part of the application.
   namespace: argocd
 
 spec:
-  # Projects group Applications and can restrict which repos/namespaces/kinds they
-  # are allowed to touch. "default" permits everything - fine for one person, and
-  # the first thing to tighten in a shared cluster.
   project: default
 
-  # ---------------------------------------------------------------------------
-  # WHERE THE DESIRED STATE LIVES
-  # ---------------------------------------------------------------------------
   source:
-    # Public repo, so no credentials are needed. A private one would require a
-    # deploy key or token registered under Settings -> Repositories.
     repoURL: https://github.com/nikolaev13nik/Attendance-Accounting.git
 
-    # A branch, tag or commit SHA. A branch means "follow whatever main says",
-    # which is the usual choice; a SHA pins it and disables drift from new pushes.
     targetRevision: main
 
-    # Directory INSIDE the repo. Argo CD finds Chart.yaml here and knows to run
-    # `helm template` rather than treat the files as plain manifests.
     path: helm/accounting
 
-    # Deliberately NO helm.parameters / image.tag override.
-    #
-    # The version comes from Chart.yaml's appVersion in the service's own repo,
-    # so the repo that owns the code also owns which build is deployed. Deploying
-    # a new version becomes: bump appVersion, commit, push. Nothing to set here,
-    # and nothing about accounting's version lives in this platform repo.
-
-  # ---------------------------------------------------------------------------
-  # WHERE IT GETS APPLIED
-  # ---------------------------------------------------------------------------
   destination:
-    # The in-cluster API server, i.e. the same cluster Argo CD runs in. A remote
-    # cluster would be its URL, registered with `argocd cluster add`.
     server: https://kubernetes.default.svc
     namespace: attendance
 
-  # ---------------------------------------------------------------------------
-  # SYNC POLICY - full GitOps
-  # ---------------------------------------------------------------------------
-  # Three independent behaviours, often confused with each other:
-  #
-  #   automated  - act on GIT changes without a human pressing Sync. On its own
-  #                this does NOT touch drift: a `kubectl scale` you did by hand
-  #                survives until the next git change happens to overwrite it.
-  #
-  #   selfHeal   - act on CLUSTER changes too. Anything that makes the cluster
-  #                differ from git gets reverted, within seconds. THIS is what
-  #                makes git the only way to deploy: `kubectl scale`,
-  #                `kubectl edit`, even `helm upgrade` by hand are all undone.
-  #
-  #   prune      - DELETE objects that disappear from git. Without it, removing
-  #                a Service from the chart leaves it orphaned in the cluster
-  #                forever, still routing traffic, owned by nobody.
-  #
-  # prune is the one to think twice about: it means a bad commit can delete live
-  # objects. That is correct GitOps and also exactly how people lose things, which
-  # is why anything holding data should carry
-  # helm.sh/resource-policy or argocd.argoproj.io/sync-options: Prune=false.
-  # Nothing in THIS chart holds data - it renders a Deployment and a Service only.
   syncPolicy:
     automated:
       prune: true

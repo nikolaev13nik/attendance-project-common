@@ -4,9 +4,7 @@ kind: Ingress
 metadata:
   name: attendance
   namespace: {{ .Values.namespace.name }}
-  {{- /* ALB on EKS needs several annotations; locally there are none, and an
-         empty `annotations:` key would be invalid YAML - so only emit the block
-         when the map is non-empty. */}}
+
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -17,11 +15,7 @@ spec:
     - host: {{ .Values.ingress.host }}
       http:
         paths:
-          {{- /* `range` walks the ingress.paths LIST from values.yaml.
-                 Inside the loop, `.` is the current list item, so .path,
-                 .service and .port refer to that entry's fields.
-                 Adding a third service is one entry in values.yaml - no
-                 template change at all. */}}
+
           {{- range .Values.ingress.paths }}
           - path: {{ .path }}
             pathType: Prefix
