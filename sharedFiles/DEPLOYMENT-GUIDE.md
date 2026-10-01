@@ -160,7 +160,7 @@ attendance-project-common/helm/platform/
 Attendance-Accounting/helm/accounting/
 ├── Chart.yaml
 ├── values.yaml
-└── templates/{deployment,service}.yaml
+└── templates/{configmap,deployment,service}.yaml
 
 Attendance-TimeTracking/helm/timetracking/   (same shape)
 ```
@@ -168,12 +168,29 @@ Attendance-TimeTracking/helm/timetracking/   (same shape)
 **Only files in `templates/` become Kubernetes objects.** `values.yaml` and
 `Chart.yaml` are inputs for Helm; `files/` holds data a template reads.
 
+### Where configuration lives — three places, three owners
+
+| Object | Holds | Owned by | Change it by |
+| --- | --- | --- | --- |
+| `attendance-config` | what **both** services need: `POSTGRES_HOST`, `KAFKA_BOOTSTRAP_SERVERS`, `ATTENDANCE_ACCOUNTING_BASE_URL` | the **platform** chart | edit `helm/platform/values.yaml`, `helm upgrade platform` |
+| `accounting-config`<br>`timetracking-config` | knobs only that service reads: JWT lifetime, client timeouts | that **service's own** chart | edit the service's `values.yaml`, commit, push |
+| `attendance-secrets` | all passwords and the JWT signing key | **nobody** — created by hand | `kubectl create secret ... --from-env-file=.env` |
+
+A value only one service reads must not go in `attendance-config`: that would force
+the platform repo to know about a service's internals, and the dependency is meant to
+run one way only.
+
 ### Two versions in `Chart.yaml`, often confused
 
 ```yaml
-version: 0.2.0        # the CHART — bump when templates or values change
+version: 0.3.0        # the CHART — bump when templates or values change
 appVersion: "1.0.4"   # the default image tag — bump to deploy a new build
 ```
+
+The two move independently, and the three charts version themselves separately —
+they are not kept in step. A chart at `0.3.0` deploying an app at `1.0.4` simply means
+the YAML has been revised three times and the application four. `helm history` shows
+both per revision, so you can tell "the app changed" from "my chart changed".
 
 ## Commands
 
@@ -280,6 +297,22 @@ With `selfHeal: true`, any change made with `kubectl` or `helm` against these tw
 services is reverted within seconds. Git is the only way in. The **platform** chart is
 still plain Helm and is upgraded by hand.
 
+## Tuning a service at runtime
+
+Each service has its own ConfigMap, so a value can be inspected and changed in one
+place:
+
+```bash
+kubectl edit cm accounting-config -n attendance        # e.g. the JWT lifetime
+kubectl delete pod -n attendance -l app=accounting     # env is frozen at container start
+```
+
+**That edit is reverted within seconds**, because `selfHeal` is on — useful for
+experiments, where the automatic revert means you cannot forget to undo a test. To
+make such an edit persist, the Application needs an `ignoreDifferences` rule on
+`/data` for that ConfigMap; the cost is that the value stops being answerable from
+git. The supported path is still: edit the service's `values.yaml`, commit, push.
+
 ---
 
 # Quick reference
@@ -303,7 +336,11 @@ still plain Helm and is upgraded by hand.
 - **Helm silently ignores unknown values keys** unless a chart ships
   `values.schema.json`. A typo gives no error — verify the rendered output.
 - **Changing a ConfigMap does not restart pods.** Environment variables are injected
-  once, at container start. Use `kubectl rollout restart`, or a checksum annotation.
+  once, at container start, and frozen. The pod must be replaced to see a new value.
+  For a Helm-managed workload use `kubectl rollout restart`; for an Argo CD-managed
+  one use `kubectl delete pod -l app=<name>` instead — `rollout restart` writes an
+  annotation into the pod template, which Argo CD treats as drift and reverts, giving
+  you two pointless rollouts.
 - **`kubectl apply` and Helm fight over field ownership.** Once a chart owns an
   object, do not `kubectl apply` a manifest for it — the first Helm upgrade afterwards
   fails with a conflict.
