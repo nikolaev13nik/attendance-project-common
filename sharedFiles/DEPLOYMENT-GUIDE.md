@@ -51,7 +51,7 @@ Everything on one machine, one network, one command.
 
 | File | Repo | Purpose |
 | --- | --- | --- |
-| `docker-compose.yml` | common | all four services: postgres, kafka, accounting, timetracking |
+| `docker-compose.yml` | common | all five services: postgres, kafka, accounting, timetracking, aiassistance |
 | `.env` | common | secrets, read by Compose via `${VAR}` |
 | `helm/platform/files/init-db.sh` | common | creates the database, both schemas, both restricted DB users |
 | `Dockerfile.dev` | **each service** | multi-stage build **from source** — used by Compose |
@@ -162,7 +162,8 @@ Attendance-Accounting/helm/accounting/
 ├── values.yaml
 └── templates/{configmap,deployment,service}.yaml
 
-Attendance-TimeTracking/helm/timetracking/   (same shape)
+Attendance-TimeTracking/helm/timetracking/     (same shape)
+Attendance-AI-Assistance/helm/aiassistance/    (same shape, minus service.yaml - nothing calls it)
 ```
 
 **Only files in `templates/` become Kubernetes objects.** `values.yaml` and
@@ -173,8 +174,8 @@ Attendance-TimeTracking/helm/timetracking/   (same shape)
 | Object | Holds | Owned by | Change it by |
 | --- | --- | --- | --- |
 | `attendance-config` | what **both** services need: `POSTGRES_HOST`, `KAFKA_BOOTSTRAP_SERVERS`, `ATTENDANCE_ACCOUNTING_BASE_URL` | the **platform** chart | edit `helm/platform/values.yaml`, `helm upgrade platform` |
-| `accounting-config`<br>`timetracking-config` | knobs only that service reads: JWT lifetime, client timeouts | that **service's own** chart | edit the service's `values.yaml`, commit, push |
-| `attendance-secrets` | all passwords and the JWT signing key | **nobody** — created by hand | `kubectl create secret ... --from-env-file=.env` |
+| `accounting-config`<br>`timetracking-config`<br>`aiassistance-config` | knobs only that service reads: JWT lifetime, client timeouts, SMTP host/sender | that **service's own** chart | edit the service's `values.yaml`, commit, push |
+| `attendance-secrets` | all passwords, the JWT signing key, the SMTP credentials | **nobody** — created by hand | `kubectl create secret ... --from-env-file=.env` |
 
 A value only one service reads must not go in `attendance-config`: that would force
 the platform repo to know about a service's internals, and the dependency is meant to
@@ -217,6 +218,9 @@ helm upgrade --install accounting ../Attendance-Accounting/helm/accounting \
 
 helm upgrade --install timetracking ../Attendance-TimeTracking/helm/timetracking \
   -n attendance --set image.tag=1.0.12 --wait --timeout 10m
+
+helm upgrade --install aiassistance ../Attendance-AI-Assistance/helm/aiassistance \
+  -n attendance --set image.tag=1.0.0 --wait --timeout 10m
 ```
 
 Always `upgrade --install`, never `install` — it works whether or not the release
@@ -262,6 +266,7 @@ Argo CD runs **inside** the cluster and pulls from GitHub. Deploying becomes
 | `helm/argocd-values.yaml` | values for the third-party `argo/argo-cd` chart |
 | `argocd/accounting-application.yaml` | points Argo at `Attendance-Accounting/helm/accounting` |
 | `argocd/timetracking-application.yaml` | points Argo at `Attendance-TimeTracking/helm/timetracking` |
+| `argocd/aiassistance-application.yaml` | points Argo at `Attendance-AI-Assistance/helm/aiassistance` |
 
 ## Commands
 
@@ -273,6 +278,7 @@ helm upgrade --install argocd argo/argo-cd --version 10.9.4 \
 
 kubectl apply -f argocd/accounting-application.yaml
 kubectl apply -f argocd/timetracking-application.yaml
+kubectl apply -f argocd/aiassistance-application.yaml
 ```
 
 UI at `http://argocd.local` (add it to `/etc/hosts`). Initial password:
