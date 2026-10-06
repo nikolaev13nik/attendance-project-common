@@ -3,6 +3,6 @@ name: attendance-platform
 description: Shared infrastructure for the Attendance system - namespace, config, Postgres, Kafka, Ingress
 type: application
 
-version: 0.1.0
+version: 0.1.1
 
-appVersion: "16"
+appVersion: "17"
