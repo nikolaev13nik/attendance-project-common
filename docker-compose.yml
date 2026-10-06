@@ -153,6 +153,12 @@ services:
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
       MAIL_FROM: ${MAIL_FROM:-no-reply@attendance.local}
 
+      # No ":-" default, unlike the MAIL_* values above. A missing SMTP config is a degraded mode this
+      # service is built for; a missing API key is not - every analysis call would fail at runtime.
+      # Leaving it undefaulted makes Compose warn at "up" time instead of starting a container that
+      # only fails once the first report arrives.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+
     # 8083 continues the sequence: 8081 accounting, 8082 timetracking. Only /actuator/health answers here.
     ports:
       - "8083:8080"
