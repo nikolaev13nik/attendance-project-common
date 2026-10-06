@@ -140,12 +140,8 @@ services:
     restart: "no"
 
     environment:
-      # The only platform value it needs. No database and no JWT secret: this service has no API to
-      # protect and no rows to store - it reads one Kafka topic and sends mail.
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
 
-      # Defaults with ":-" so the stack comes up without SMTP configured. MAIL_ENABLED=false means the
-      # pipeline runs end to end and logs the analysis instead of sending it.
       MAIL_ENABLED: ${MAIL_ENABLED:-false}
       MAIL_HOST: ${MAIL_HOST:-}
       MAIL_PORT: ${MAIL_PORT:-587}
@@ -153,17 +149,13 @@ services:
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
       MAIL_FROM: ${MAIL_FROM:-no-reply@attendance.local}
 
-      # No ":-" default, unlike the MAIL_* values above. A missing SMTP config is a degraded mode this
-      # service is built for; a missing API key is not - every analysis call would fail at runtime.
-      # Leaving it undefaulted makes Compose warn at "up" time instead of starting a container that
-      # only fails once the first report arrives.
+      ATT_AI_LLM_PROVIDER: anthropic
+
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
 
-    # 8083 continues the sequence: 8081 accounting, 8082 timetracking. Only /actuator/health answers here.
     ports:
       - "8083:8080"
 
-    # Kafka only. It does not depend on timetracking: the topic decouples them, so either can start first.
     depends_on:
       kafka:
         condition: service_healthy
