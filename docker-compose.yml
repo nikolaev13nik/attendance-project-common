@@ -3,7 +3,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: attendance-postgres
-    restart: "no"
+    restart: unless-stopped
 
     environment:
       POSTGRES_USER: postgres
@@ -28,7 +28,7 @@ services:
   kafka:
     image: apache/kafka:4.3.1
     container_name: attendance-kafka
-    restart: "no"
+    restart: unless-stopped
 
     environment:
       KAFKA_NODE_ID: 1
@@ -57,7 +57,7 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
       interval: 10s
-      timeout: 10s
+      timeout: 30s
       retries: 10
       start_period: 30s
 
@@ -67,7 +67,7 @@ services:
       dockerfile: Dockerfile.dev
     image: accounting:local
     container_name: attendance-accounting
-    restart: "no"
+    restart: unless-stopped
 
     environment:
       ATTENDANCE_ACCOUNTING_JWT_SECRET: ${JWT_SECRET}
@@ -98,7 +98,7 @@ services:
       dockerfile: Dockerfile.dev
     image: timetracking:local
     container_name: attendance-timetracking
-    restart: "no"
+    restart: unless-stopped
 
     environment:
       ATTENDANCE_ACCOUNTING_JWT_SECRET: ${JWT_SECRET}
