@@ -86,12 +86,15 @@ spec:
               command: ["sh", "-c", "pg_isready -U {{ .Values.postgres.user }}"]
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 10
 
           livenessProbe:
             exec:
               command: ["sh", "-c", "pg_isready -U {{ .Values.postgres.user }}"]
             initialDelaySeconds: 30
             periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 6
 
       volumes:
         - name: data
