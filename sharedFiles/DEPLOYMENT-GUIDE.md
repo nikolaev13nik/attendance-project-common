@@ -210,21 +210,38 @@ kubectl create secret generic attendance-secrets -n attendance --from-env-file=.
 
 # 3. platform
 helm upgrade --install platform ./helm/platform \
-  -n attendance -f helm/platform/values-local.yaml --wait --timeout 5m
+  -n attendance -f helm/platform/values-local.yaml --wait --atomic --timeout 5m
 
 # 4. the two services
 helm upgrade --install accounting ../Attendance-Accounting/helm/accounting \
-  -n attendance --set image.tag=1.0.4 --wait --timeout 10m
+  -n attendance --set image.tag=1.0.4 --wait --atomic --timeout 10m
 
 helm upgrade --install timetracking ../Attendance-TimeTracking/helm/timetracking \
-  -n attendance --set image.tag=1.0.12 --wait --timeout 10m
+  -n attendance --set image.tag=1.0.12 --wait --atomic --timeout 10m
 
 helm upgrade --install aiassistance ../Attendance-AI-Assistance/helm/aiassistance \
-  -n attendance --set image.tag=1.0.0 --wait --timeout 10m
+  -n attendance --set image.tag=1.0.0 --wait --atomic --timeout 10m
 ```
 
 Always `upgrade --install`, never `install` — it works whether or not the release
 already exists, so the same command serves the first deploy and the hundredth.
+
+`--atomic` makes a failed rollout undo itself: on an upgrade Helm rolls back to the
+previous revision, so the release never sits in `pending-upgrade` waiting for a human.
+It implies `--wait`, which is kept explicit here only because the failure mode below
+is about waiting.
+
+> **Run this once before using `--atomic` on a first install.** On a *failed first
+> install* there is no previous revision to roll back to, so `--atomic` uninstalls the
+> release instead — and an uninstall prunes the PVCs. On k3s `local-path`
+> (`reclaimPolicy: Delete`) that erases the Postgres data directory.
+>
+> ```bash
+> kubectl annotate pvc postgres-pvc -n attendance helm.sh/resource-policy=keep --overwrite
+> kubectl annotate pvc kafka-pvc    -n attendance helm.sh/resource-policy=keep --overwrite
+> ```
+>
+> Helm then refuses to delete them, and `--atomic` is safe in both directions.
 
 ### Useful
 

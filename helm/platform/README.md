@@ -63,10 +63,15 @@ exactly one owner.
 helm upgrade --install platform ./platform \
   --namespace attendance \
   -f platform/values-local.yaml \
-  --wait --timeout 5m
+  --wait --atomic --timeout 5m
 ```
 
 `--wait` matters here, see the failure mode below.
+
+`--atomic` rolls a failed upgrade back to the previous revision. On a first install
+there is no such revision, so it uninstalls instead — which prunes the PVCs unless
+they carry `helm.sh/resource-policy=keep`. Apply those annotations (see **Protecting
+data**) before relying on it.
 
 ### 4. The two service charts
 
@@ -77,11 +82,11 @@ platform.
 ```bash
 helm upgrade --install accounting ~/IdeaProjects/Attendance-Accounting/helm/accounting \
   --namespace attendance --set image.tag=1.0.4 \
-  --wait --timeout 10m
+  --wait --atomic --timeout 10m
 
 helm upgrade --install timetracking ~/IdeaProjects/Attendance-TimeTracking/helm/timetracking \
   --namespace attendance --set image.tag=1.0.12 \
-  --wait --timeout 10m
+  --wait --atomic --timeout 10m
 ```
 
 `--set image.tag` rather than a version committed in a manifest: that is what keeps
