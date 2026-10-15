@@ -67,3 +67,6 @@ ingress:
     - path: /attendance
       service: timetracking
       port: 8080
+    - path: /
+      service: gui
+      port: 8080
