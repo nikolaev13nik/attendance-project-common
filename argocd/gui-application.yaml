@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gui
+  namespace: argocd
+
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/nikolaev13nik/Attendance-Gui-App.git
+
+    targetRevision: main
+
+    path: helm/gui
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: attendance
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

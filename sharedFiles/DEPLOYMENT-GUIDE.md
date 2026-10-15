@@ -1,6 +1,6 @@
 # Deploying the Attendance system — three ways
 
-The same two services deployed three different ways, each building on the last.
+The same services deployed three different ways, each building on the last.
 Read top to bottom: every stage assumes the files from the one before it.
 
 | Stage | Tool | What it adds |
@@ -16,6 +16,8 @@ Read top to bottom: every stage assumes the files from the one before it.
 | --- | --- |
 | `Attendance-Accounting` | issues JWTs. Java 17 / Spring Boot |
 | `Attendance-TimeTracking` | validates those JWTs, calls Accounting, publishes to Kafka |
+| `Attendance-AI-Assistance` | consumes Kafka and sends mail. No Service and no ingress path — nothing calls it |
+| `Attendance-Gui-App` | React 18 / Vite SPA, served by nginx at the ingress **root**. Fetches relative paths, so it must be same-origin with the backends |
 | `attendance-project-common` | no code — all shared infrastructure lives here |
 
 Supporting infrastructure: **PostgreSQL** (one database `attendance`, one schema per
@@ -51,17 +53,37 @@ Everything on one machine, one network, one command.
 
 | File | Repo | Purpose |
 | --- | --- | --- |
-| `docker-compose.yml` | common | all five services: postgres, kafka, accounting, timetracking, aiassistance |
+| `docker-compose.yml` | common | all six services: postgres, kafka, accounting, timetracking, aiassistance, gui |
 | `.env` | common | secrets, read by Compose via `${VAR}` |
 | `helm/platform/files/init-db.sh` | common | creates the database, both schemas, both restricted DB users |
 | `Dockerfile.dev` | **each service** | multi-stage build **from source** — used by Compose |
 | `Dockerfile.dev.dockerignore` | **each service** | excludes `target/` from the build context |
 | `Dockerfile` | **each service** | used by **CI only** — copies a jar built on the runner |
 | `.dockerignore` | **each service** | must **not** exclude `target/`, or CI's build breaks |
+| `nginx/default.conf` | **GUI** | baked into the image: SPA fallback, `/healthz`, cache headers |
+| `nginx/compose-proxy.conf` | **GUI** | mounted **only** by Compose — proxies `/account` and `/attendance` |
 
 > Two Dockerfiles per service on purpose. CI builds the jar first and copies it in;
 > local builds compile inside the image. Docker picks up
 > `<Dockerfile>.dockerignore` automatically when it exists.
+>
+> **The GUI is the exception: one Dockerfile.** Its CI and Compose builds are
+> identical — `npm run build` runs inside the image — because `dist/` is gitignored,
+> so there is no host-built artifact to copy, and the build takes about ten seconds.
+> Its `.dockerignore` is therefore the inverse of the rule above: it **must** exclude
+> `node_modules/` (host-architecture binaries) and `dist/`, so a stale local build can
+> never leak into the image.
+
+> **Compose has no Ingress, so the GUI container does its own routing there.** The SPA
+> fetches relative paths; without a proxy, `/account/login` would hit nginx's
+> `try_files` fallback and return `index.html` with a 200, which the client then tries
+> to parse as JSON. The image carries an empty `include conf.d/proxy/*.conf` and
+> Compose bind-mounts `compose-proxy.conf` into it; Kubernetes leaves the glob empty
+> and the ingress routes instead. The same image runs in both places.
+>
+> Its `depends_on` is health-gated for a reason: nginx resolves the hostnames in
+> `proxy_pass` at **startup** and exits if they do not resolve, and Compose DNS only
+> answers for running containers.
 
 ## Commands
 
@@ -70,12 +92,13 @@ cd attendance-project-common
 cp .env.example .env          # then fill in real values
 
 docker compose up -d --build  # build images and start everything
-docker compose ps             # all four should be healthy
+docker compose ps             # all six should be healthy
 docker compose logs -f accounting
 ```
 
 | Service | URL from your machine |
 | --- | --- |
+| GUI | http://localhost:8080 |
 | Accounting | http://localhost:8081 |
 | TimeTracking | http://localhost:8082 |
 | Postgres | localhost:5432 |
@@ -105,7 +128,7 @@ docker compose down -v        # stop and DELETE the volumes (data gone)
 | `k8s/configmap.yaml` | common | non-secret config shared by both services |
 | `k8s/postgres.yaml` | common | Deployment + Service + PersistentVolumeClaim + init ConfigMap |
 | `k8s/kafka.yaml` | common | Deployment + Service + PersistentVolumeClaim |
-| `k8s/ingress.yaml` | common | one entry point routing `/account` and `/attendance` |
+| `k8s/ingress.yaml` | common | one entry point routing `/account`, `/attendance` and `/` |
 | `k8s/accounting.yaml` | **Accounting** | its own Deployment + Service |
 | `k8s/timetracking.yaml` | **TimeTracking** | its own Deployment + Service |
 
@@ -164,6 +187,7 @@ Attendance-Accounting/helm/accounting/
 
 Attendance-TimeTracking/helm/timetracking/     (same shape)
 Attendance-AI-Assistance/helm/aiassistance/    (same shape, minus service.yaml - nothing calls it)
+Attendance-Gui-App/helm/gui/                   (same shape, minus configmap.yaml - nothing to configure)
 ```
 
 **Only files in `templates/` become Kubernetes objects.** `values.yaml` and
@@ -176,6 +200,7 @@ Attendance-AI-Assistance/helm/aiassistance/    (same shape, minus service.yaml -
 | `attendance-config` | what **both** services need: `POSTGRES_HOST`, `KAFKA_BOOTSTRAP_SERVERS`, `ATTENDANCE_ACCOUNTING_BASE_URL` | the **platform** chart | edit `helm/platform/values.yaml`, `helm upgrade platform` |
 | `accounting-config`<br>`timetracking-config`<br>`aiassistance-config` | knobs only that service reads: JWT lifetime, client timeouts, SMTP host/sender | that **service's own** chart | edit the service's `values.yaml`, commit, push |
 | `attendance-secrets` | all passwords, the JWT signing key, the SMTP credentials | **nobody** — created by hand | `kubectl create secret ... --from-env-file=.env` |
+| *(the GUI has neither)* | nothing. Its backend origin is whatever origin served the page, which the **ingress** decides; everything else is compiled into the bundle at `vite build` | — | rebuild the image |
 
 A value only one service reads must not go in `attendance-config`: that would force
 the platform repo to know about a service's internals, and the dependency is meant to
@@ -220,6 +245,9 @@ helm upgrade --install timetracking ../Attendance-TimeTracking/helm/timetracking
   -n attendance --set image.tag=1.0.12 --wait --atomic --timeout 10m
 
 helm upgrade --install aiassistance ../Attendance-AI-Assistance/helm/aiassistance \
+  -n attendance --set image.tag=1.0.0 --wait --atomic --timeout 10m
+
+helm upgrade --install gui ../Attendance-Gui-App/helm/gui \
   -n attendance --set image.tag=1.0.0 --wait --atomic --timeout 10m
 ```
 
@@ -268,6 +296,9 @@ class to `alb`, and points the config at RDS/MSK endpoints.
 > container-start, not by Helm. The pods sit in `CreateContainerConfigError`. Creating
 > the Secret afterwards heals them with no further command. `--wait` turns that silent
 > success into a visible failure.
+>
+> The GUI is the one service immune to this: it has no `secretKeyRef` and no
+> `configMapKeyRef` at all, so its chart installs and runs on a bare namespace.
 
 ---
 
@@ -284,6 +315,7 @@ Argo CD runs **inside** the cluster and pulls from GitHub. Deploying becomes
 | `argocd/accounting-application.yaml` | points Argo at `Attendance-Accounting/helm/accounting` |
 | `argocd/timetracking-application.yaml` | points Argo at `Attendance-TimeTracking/helm/timetracking` |
 | `argocd/aiassistance-application.yaml` | points Argo at `Attendance-AI-Assistance/helm/aiassistance` |
+| `argocd/gui-application.yaml` | points Argo at `Attendance-Gui-App/helm/gui` |
 
 ## Commands
 
@@ -296,6 +328,7 @@ helm upgrade --install argocd argo/argo-cd --version 10.9.4 \
 kubectl apply -f argocd/accounting-application.yaml
 kubectl apply -f argocd/timetracking-application.yaml
 kubectl apply -f argocd/aiassistance-application.yaml
+kubectl apply -f argocd/gui-application.yaml
 ```
 
 UI at `http://argocd.local` (add it to `/etc/hosts`). Initial password:
@@ -308,16 +341,22 @@ kubectl get secret argocd-initial-admin-secret -n argocd \
 ## How you deploy now
 
 ```bash
-# edit helm/<service>/values.yaml or bump appVersion in Chart.yaml
+# edit anything under src/ and push - CI does the rest
 git commit -am "..." && git push
 ```
+
+CI builds the image, pushes it to GHCR, tags the version, and then **writes that
+version into the service's own `helm/<service>/Chart.yaml` as `appVersion` and commits
+it**. The `paths-ignore: helm/**` trigger filter is what stops that commit retriggering
+the build. So bumping `appVersion` by hand is no longer a step — do it only to pin or
+roll back to a tag that already exists.
 
 That is the whole deployment. Argo CD notices within ~3 minutes and applies it.
 Roll back with `git revert`. The deployed version is a **commit SHA**, visible as
 `kubectl get application <name> -n argocd -o jsonpath='{.status.sync.revision}'`.
 
-With `selfHeal: true`, any change made with `kubectl` or `helm` against these two
-services is reverted within seconds. Git is the only way in. The **platform** chart is
+With `selfHeal: true`, any change made with `kubectl` or `helm` against these
+Argo-managed services is reverted within seconds. Git is the only way in. The **platform** chart is
 still plain Helm and is upgraded by hand.
 
 ## Tuning a service at runtime
@@ -343,13 +382,14 @@ git. The supported path is still: edit the service's `values.yaml`, commit, push
 | I want to... | Command |
 | --- | --- |
 | run everything on one machine | `docker compose up -d --build` |
-| install into Kubernetes | `kubectl create ns` + `kubectl create secret` + 3 × `helm upgrade --install` |
+| install into Kubernetes | `kubectl create ns` + `kubectl create secret` + 4 × `helm upgrade --install` |
 | see what is installed | `helm list -n attendance` / `kubectl get applications -n argocd` |
 | preview a chart without applying | `helm template p ./helm/platform` |
 | check the cluster matches the chart | `helm template p ./helm/platform \| kubectl diff -f -` |
 | roll back (Helm-managed) | `helm rollback platform 3 -n attendance` |
 | roll back (Argo-managed) | `git revert <sha> && git push` |
-| deploy a new build | bump `appVersion` in the service's `Chart.yaml`, commit, push |
+| deploy a new build | push to `main` — CI builds, tags, and bumps `appVersion` itself |
+| pin or roll back to a tag | set `appVersion` in the service's `Chart.yaml`, commit, push |
 | tear everything down | `helm uninstall platform -n attendance` then `kubectl delete ns attendance` |
 
 ## Things that cost time to discover
@@ -367,3 +407,28 @@ git. The supported path is still: edit the service's `values.yaml`, commit, push
 - **`kubectl apply` and Helm fight over field ownership.** Once a chart owns an
   object, do not `kubectl apply` a manifest for it — the first Helm upgrade afterwards
   fails with a conflict.
+- **A containerised SPA must send `Cache-Control: no-store` on `index.html`.** It is
+  the only unhashed file and it names the hashed bundle, so a cached copy keeps asking
+  for assets the new image no longer contains — a white page after a deploy that a
+  hard refresh appears to "fix", which is why it is easy to miss. The hashed files
+  under `/assets/` get `immutable` instead; that pairing is the point of the hashes.
+- **nginx resolves a literal hostname in `proxy_pass` at startup and exits if it
+  fails.** A `proxy_pass http://accounting:8080` baked into an image therefore
+  crash-loops anywhere that name does not resolve. Keep it in the mounted Compose-only
+  file, and gate `depends_on` on health.
+- **`nginx-unprivileged` cannot add its own IPv6 listener to a config you `COPY` in.**
+  The image's `10-listen-on-ipv6-by-default.sh` tries to patch `default.conf`, but the
+  file is root-owned and the container runs as uid 101, so it logs `can not modify ...
+  (read-only file system?)` and carries on. nginx then listens on IPv4 only, and
+  anything resolving `localhost` to `::1` — macOS `curl`, busybox `wget`, a Compose
+  healthcheck — is refused instantly, which reads as "the container is down". Declare
+  `listen [::]:8080;` yourself.
+- **A `/` `Prefix` path does not shadow `/account` on Traefik**, which derives router
+  priority from rule length, matching the Ingress spec's longest-prefix rule. But the
+  AWS Load Balancer Controller emits ALB listener rules in list order, where a leading
+  `/` swallows everything. Keep `ingress.paths` longest-prefix-first and it is correct
+  under both.
+- **A list in an override values file replaces the whole list — but only if it is
+  declared there.** `values-aws.yaml` never mentions `ingress.paths`, so it inherits
+  them, which is why adding a path to `values.yaml` lands in the AWS render for free,
+  and why copying the list into the override would create a second one that drifts.

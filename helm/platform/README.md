@@ -1,8 +1,8 @@
 # attendance-platform chart
 
 Shared infrastructure for the Attendance system: namespace, ConfigMap, Postgres,
-Kafka, Ingress. The two Spring services live in their own repos and depend on this
-chart's five shared names — they must never be depended on in return.
+Kafka, Ingress. The three Spring services and the GUI live in their own repos and
+depend on this chart's five shared names — they must never be depended on in return.
 
 | Contract name | Kind | Used by |
 | --- | --- | --- |
@@ -10,7 +10,12 @@ chart's five shared names — they must never be depended on in return.
 | `attendance-config` | ConfigMap | both services |
 | `attendance-secrets` | Secret | both services + Postgres |
 | `postgres` | Service | both services |
-| `kafka` | Service | TimeTracking |
+| `kafka` | Service | TimeTracking, AI-Assistance |
+
+The **GUI consumes none of these five names.** It has no ConfigMap, no Secret keys
+and no database, so its only coupling to this chart is the Ingress — a weaker
+dependency than every other service has, and the reason its chart installs onto a
+bare namespace.
 
 ---
 
@@ -73,7 +78,7 @@ there is no such revision, so it uninstalls instead — which prunes the PVCs un
 they carry `helm.sh/resource-policy=keep`. Apply those annotations (see **Protecting
 data**) before relying on it.
 
-### 4. The two service charts
+### 4. The service charts
 
 Each service owns its own chart, in its own repo. They are separate Helm releases,
 so each can be upgraded and rolled back independently of the other and of the
@@ -87,6 +92,10 @@ helm upgrade --install accounting ~/IdeaProjects/Attendance-Accounting/helm/acco
 helm upgrade --install timetracking ~/IdeaProjects/Attendance-TimeTracking/helm/timetracking \
   --namespace attendance --set image.tag=1.0.12 \
   --wait --atomic --timeout 10m
+
+helm upgrade --install gui ~/IdeaProjects/Attendance-Gui-App/helm/gui \
+  --namespace attendance --set image.tag=1.0.0 \
+  --wait --atomic --timeout 10m
 ```
 
 `--set image.tag` rather than a version committed in a manifest: that is what keeps
@@ -94,9 +103,46 @@ a deploy from being a git change, which would otherwise trigger CI and build yet
 another version. The chart falls back to `Chart.yaml`'s `appVersion` when the flag
 is omitted.
 
-The timeout is generous because the images are ~500MB and are pulled from GHCR on
-first use. That pull happens *before* the container starts, so it is not on the
-startup probe's clock.
+The timeout is generous because the Java images are ~500MB and are pulled from GHCR
+on first use. That pull happens *before* the container starts, so it is not on the
+startup probe's clock. The GUI image is ~83MB — a static nginx plus the bundle — and
+pulls in seconds, which is why its chart allows a 30s startup budget where the Java
+charts allow 180s.
+
+---
+
+## `ingress.paths` — one list, one Ingress
+
+`templates/ingress.yaml` renders a single Ingress named `attendance` from
+`ingress.paths`, one `pathType: Prefix` rule per entry. Adding a service to the
+cluster's front door is one entry here, not a new Ingress.
+
+```yaml
+ingress:
+  paths:
+    - path: /account
+      service: accounting
+      port: 8080
+    - path: /attendance
+      service: timetracking
+      port: 8080
+    - path: /
+      service: gui
+      port: 8080
+```
+
+Keep the list **longest-prefix first**. Traefik does not need it — it derives router
+priority from rule length, so `PathPrefix(/account)` outranks `PathPrefix(/)` in any
+order, matching the Ingress spec's longest-prefix rule. The AWS Load Balancer
+Controller does need it: it emits ALB listener rules in list order, and a leading `/`
+would swallow every request. Ordering the list correctly costs nothing and is right
+under both.
+
+`values-aws.yaml` deliberately **does not** declare `paths`. It overrides
+`ingress.className`, `.host` and `.annotations` only, so it inherits this list and a
+path added here appears in the AWS render automatically. Copying the list into that
+file would create a second one that silently drifts — the trap with list values is
+that an override replaces the whole list rather than merging it.
 
 ---
 
