@@ -120,14 +120,21 @@ and is accepted here on 8082, because both containers were given the same
 | PUT | `/attendance/openSession/tenant/{tenantId}/userId/{idUser}` | ADMIN **or self** |
 | PUT | `/attendance/closeSession/tenant/{tenantId}/userId/{idUser}` | ADMIN **or self** |
 | POST | `/attendance/sessionChange/tenant/{tenantId}` | ADMINISTRATOR |
-| POST | `/attendance/addLeaveDays/tenant/{tenantId}/userId/{idUser}` | ADMINISTRATOR |
-| GET | `/attendance/sessions/tenant/{tenantId}` | ADMINISTRATOR |
+| DELETE | `/attendance/sessionRemove/tenant/{tenantId}/session/{id}` | ADMINISTRATOR |
+| GET | `/attendance/sessions/tenant/{tenantId}` | ADMIN **or self** |
+| GET | `/attendance/check/tenant/{tenantId}/user/{idUser}` | ADMIN **or self** |
+| POST | `/attendance/addLeaveDays/tenant/{tenantId}/userId/{idUser}` | ADMIN **or self** |
+| GET | `/attendance/leaveDays/tenant/{tenantId}/userId/{idUser}` | ADMIN **or self** |
+| POST | `/attendance/leaveDayChange/tenant/{tenantId}` | ADMINISTRATOR |
+| DELETE | `/attendance/leaveDayRemove/tenant/{tenantId}/leaveDay/{id}` | ADMINISTRATOR |
 | GET | `/attendance/workdays/tenant/{tenantId}` | ADMINISTRATOR |
 | GET | `/attendance/minutes/tenant/{tenantId}` | ADMINISTRATOR |
 | GET | `/attendance/overtimeMinutes/tenant/{tenantId}` | ADMINISTRATOR |
-| GET | `/attendance/check/tenant/{tenantId}/user/{idUser}` | ADMINISTRATOR |
 | POST | `/attendance/statistic/tenant/{tenantId}` | ADMINISTRATOR |
-| DELETE | `/attendance/sessionRemove/tenant/{tenantId}/session/{id}` | ADMINISTRATOR |
+
+Reading and recording your **own** data is self-service; correcting or deleting
+a record is always ADMINISTRATOR. That asymmetry is deliberate: people report
+their own time, only an administrator rewrites history.
 
 ### Query parameters are required
 
@@ -158,6 +165,58 @@ Returns the created record:
 
 Then close it with the same shape plus `closeSessionDate`.
 
+Opening a session again on the same date does **not** overwrite the first one —
+it records a second period, which is how a break is logged. A date can therefore
+hold several session rows.
+
+### Leave days
+
+A leave day is **one row per date**, carrying a vacation portion, a sick
+portion, or both. Half sick plus half vacation on the same date is a single
+record, not two. Portions are `1.0` for a full day and `0.5` for half, and the
+two together may never exceed `1.0`.
+
+**`POST /attendance/addLeaveDays/tenant/1/userId/555000111`**
+
+```json
+{ "days": [ { "date": "2026-09-22", "vacationAmount": 0.5, "sickAmount": 0.5 } ] }
+```
+
+Returns `200` with no body. Reporting the **same date again updates** that
+record rather than adding a second one, and a portion you leave out keeps its
+stored value:
+
+```json
+{ "days": [ { "date": "2026-09-22", "sickAmount": 1.0 } ] }
+```
+
+That one is refused with **400** — the stored vacation of `0.5` plus the
+requested sick `1.0` exceeds a full day. The rule is applied to the *resulting*
+record, not just to what you sent.
+
+**`GET /attendance/leaveDays/tenant/1/userId/555000111?startDate=2026-09-01&endDate=2026-09-30`**
+
+```json
+[ { "id": 1, "userId": 555000111, "tenantId": 1, "date": "2026-09-22",
+    "vacationAmount": 0.5, "sickAmount": 0.5 } ]
+```
+
+The `id` is what the edit and remove endpoints address.
+
+**`POST /attendance/leaveDayChange/tenant/1`** — administrator only. Only the
+properties you send are changed; `0` clears a portion:
+
+```json
+{ "id": 1, "vacationAmount": 1.0, "sickAmount": 0 }
+```
+
+Returns the updated record. Clearing *both* portions is **400** — an empty
+record is a removal, so use `leaveDayRemove`. Moving a record onto a date that
+already has one is **400** as well.
+
+**`DELETE /attendance/leaveDayRemove/tenant/1/leaveDay/1`** — administrator
+only. Returns the removed record, so you can report what went.
+
 ---
 
 ## Step 4 — Verified authorization behaviour
@@ -172,7 +231,11 @@ Worth reproducing by hand; these are the cases that explain the security model.
 | 4 | Admin token, missing `idUser` | **400** (auth passed, validation failed) |
 | 5 | Normal user, `openSession` for **self** in **own** tenant | **200** |
 | 6 | Normal user, `openSession` in **another** tenant | **403** |
-| 7 | Normal user, `GET /attendance/sessions` (admin-only) | **403** |
+| 7 | Normal user, `GET /attendance/sessions` with **own** `idUser` | **200** |
+| 8 | Normal user, `GET /attendance/sessions` with a **colleague's** `idUser` | **403** |
+| 9 | Normal user, `GET /attendance/workdays` (admin-only) | **403** |
+| 10 | Normal user, `addLeaveDays` for **self** | **200** |
+| 11 | Normal user, `leaveDayChange` or `leaveDayRemove` | **403** |
 
 Two things to take from this:
 
@@ -181,8 +244,13 @@ Two things to take from this:
 - **Admins bypass the tenant check.** `TenantInterceptor` short-circuits on
   `ROLE_ADMINISTRATOR`, so the admin token will *not* produce 403 on a foreign
   tenant. Use the normal user (case 6) to see tenant isolation working.
-  Cases 6 and 7 are both 403 but from different layers — `TenantInterceptor`
+  Cases 6 and 9 are both 403 but from different layers — `TenantInterceptor`
   vs `@PreAuthorize`.
+- **"Admin-only" is per endpoint, not per service.** Cases 7 and 8 are the same
+  endpoint and the same token, differing only in the `idUser` asked for: reading
+  your own row is self-service, reading a colleague's is not. Case 11 is the
+  other half of the rule — a person may record their own leave (case 10) but
+  only an administrator may correct or delete it.
 
 ---
 
@@ -235,8 +303,16 @@ In the connection settings, PostgreSQL tab, tick **"Show all databases"**.
 
 | Schema | Tables |
 | --- | --- |
-| `accounting` | `users`, `user_roles` |
+| `accounting` | `users`, `user_roles`, `att_ac_tenant_mapping` |
 | `timetracking` | `att_work_sessions`, `att_month_statistic`, `att_user_leave_days` |
+
+`att_user_leave_days` holds **one row per date** — `id` (identity primary key),
+`tenant_id`, `user_id`, `leave_date`, `vacation_amount`, `sick_amount`, with a
+unique constraint on `(tenant_id, user_id, leave_date)`. A `NULL` amount means
+that kind of leave was not taken. If you still see `leave_type` and `amount`
+columns, the database predates that change: Hibernate's `ddl-auto=update` adds
+columns but cannot replace a primary key, so the table has to be dropped and
+left to be recreated on the next start.
 
 The services themselves connect as `accounting_user` / `timetracking_user`,
 which are granted rights **only on their own schema** — each service physically
@@ -260,6 +336,8 @@ applying them.
 | 401 after it was working | token expired (3600s) — log in again |
 | 400 with `MissingServletRequestParameter` | a required query param is absent |
 | 403 | wrong role, or wrong tenant for a non-admin |
+| 400 on `addLeaveDays` / `leaveDayChange` | the date's vacation + sick would exceed one day, both portions are zero, or the date is listed twice |
+| 500 on any leave-day call, `leave_type` in the error | the database still has the old leave-day table — see **Inspecting the database** |
 | Connection refused | stack not running — `docker compose up -d` |
 
 ```bash
