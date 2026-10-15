@@ -167,6 +167,33 @@ services:
       retries: 12
       start_period: 60s
 
+  gui:
+    build:
+      context: ../Attendance-Gui-App
+      dockerfile: Dockerfile
+    image: gui:local
+    container_name: attendance-gui
+    restart: unless-stopped
+
+    volumes:
+      - ../Attendance-Gui-App/nginx/compose-proxy.conf:/etc/nginx/conf.d/proxy/backends.conf:ro
+
+    ports:
+      - "8080:8080"
+
+    depends_on:
+      accounting:
+        condition: service_healthy
+      timetracking:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+
 volumes:
   pgdata:
   kafkadata:
