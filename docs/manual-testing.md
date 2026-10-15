@@ -244,6 +244,11 @@ cannot read the other's tables. Note that PostgreSQL cannot join across
 *databases*, but these are schemas in one database, so cross-schema joins work
 fine as `postgres`.
 
+To put known attendance rows into `timetracking` so the statistic endpoints have
+something to compute, see **`seeding-test-data.md`** — plain inserts plus a
+reusable generator function, with the `kubectl` / `docker compose` commands for
+applying them.
+
 ---
 
 ## Troubleshooting
