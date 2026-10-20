@@ -86,6 +86,7 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/kafka/data
+              subPath: data
 
           resources:
             {{- toYaml .Values.kafka.resources | nindent 12 }}
