@@ -3,4 +3,10 @@ namespace:
 
 ingress:
   className: nginx
-  host: ""
+  host: nik-attendance-app.duckdns.org
+
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+
+  tls:
+    secretName: attendance-tls
