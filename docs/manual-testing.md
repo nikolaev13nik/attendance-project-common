@@ -81,16 +81,19 @@ Now re-running login refreshes the token everywhere. It expires after **3600s**
 
 Base `http://localhost:8081`. All need the bearer token except where noted.
 
+`{tenantId}` must equal the token's tenant (otherwise **403**). Only the platform admin (token tenant 0)
+may name any tenant, including `0` for its own account. A user outside `{tenantId}` returns **404**.
+
 | Method | Path | Notes |
 | --- | --- | --- |
 | POST | `/account/login` | **public** |
 | POST | `/account/user` | **public**, returns **201** |
-| GET | `/account/users?tenantId=0` | any authenticated user |
-| GET | `/account/tenant/{tenantId}/userId/{idUser}` | any authenticated user |
-| DELETE | `/account/user/{idUser}` | ADMINISTRATOR |
-| POST | `/account/user/{idUser}/role/{role}` | ADMINISTRATOR |
-| DELETE | `/account/user/{idUser}/role/{role}` | ADMINISTRATOR |
-| PUT | `/account/user/password/{idUser}` | self, or ADMINISTRATOR |
+| GET | `/account/tenant/{tenantId}/users` | any authenticated user of that tenant |
+| GET | `/account/tenant/{tenantId}/userId/{idUser}` | any authenticated user of that tenant |
+| DELETE | `/account/tenant/{tenantId}/user/{idUser}` | ADMINISTRATOR |
+| POST | `/account/tenant/{tenantId}/user/{idUser}/role/{role}` | ADMINISTRATOR |
+| DELETE | `/account/tenant/{tenantId}/user/{idUser}/role/{role}` | ADMINISTRATOR |
+| PUT | `/account/tenant/{tenantId}/user/password/{idUser}` | self, or ADMINISTRATOR |
 
 Registration body (`POST /account/user`):
 
