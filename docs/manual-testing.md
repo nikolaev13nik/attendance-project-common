@@ -29,12 +29,12 @@ GET http://localhost:8082/actuator/health   ->  {"status":"UP"}
 
 Which user you log in as changes what you are allowed to do. Keep both handy.
 
-| | Super admin | Normal user |
+| | Platform admin | Normal user |
 | --- | --- | --- |
 | idUser | `123456789` | `555000111` |
 | password | `admin` | `pass1234` |
 | tenantId | `0` | `1` |
-| roles | ADMINISTRATOR, MODERATOR, USER | USER |
+| roles | PLATFORM_ADMIN | USER |
 | created by | seeded at startup by `AttendanceAccountingApplication` | registered manually (see below) |
 
 The admin is seeded automatically on first boot. The normal user must be
