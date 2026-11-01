@@ -65,6 +65,8 @@ services:
     build:
       context: ../Attendance-Accounting
       dockerfile: Dockerfile.dev
+      secrets:
+        - maven_settings
     image: accounting:local
     container_name: attendance-accounting
     restart: unless-stopped
@@ -197,3 +199,7 @@ services:
 volumes:
   pgdata:
   kafkadata:
+
+secrets:
+  maven_settings:
+    file: ${HOME}/.m2/settings.xml
