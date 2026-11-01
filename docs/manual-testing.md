@@ -38,7 +38,8 @@ Which user you log in as changes what you are allowed to do. Keep both handy.
 | created by | seeded at startup by `AttendanceAccountingApplication` | registered manually (see below) |
 
 The admin is seeded automatically on first boot. The normal user must be
-registered once — `POST /account/user`, see the Accounting table.
+registered once — `POST /account/tenant/1/user` with the platform admin's token, see the Accounting
+table.
 
 ---
 
@@ -87,7 +88,7 @@ may name any tenant, including `0` for its own account. A user outside `{tenantI
 | Method | Path | Notes |
 | --- | --- | --- |
 | POST | `/account/login` | **public** |
-| POST | `/account/user` | **public**, returns **201** |
+| POST | `/account/tenant/{tenantId}/user` | anonymous only into a tenant with no users (becomes its ADMINISTRATOR); otherwise ADMINISTRATOR of that tenant or the platform admin. Returns **201**; anonymous into a populated tenant is **401** |
 | GET | `/account/tenant/{tenantId}/users` | any authenticated user of that tenant |
 | GET | `/account/tenant/{tenantId}/userId/{idUser}` | any authenticated user of that tenant |
 | DELETE | `/account/tenant/{tenantId}/user/{idUser}` | ADMINISTRATOR |
@@ -95,7 +96,7 @@ may name any tenant, including `0` for its own account. A user outside `{tenantI
 | DELETE | `/account/tenant/{tenantId}/user/{idUser}/role/{role}` | ADMINISTRATOR |
 | PUT | `/account/tenant/{tenantId}/user/password/{idUser}` | self, or ADMINISTRATOR |
 
-Registration body (`POST /account/user`):
+Registration body (`POST /account/tenant/{tenantId}/user`; the tenant comes from the path):
 
 ```json
 {
@@ -103,8 +104,7 @@ Registration body (`POST /account/user`):
   "password": "pass1234",
   "firstName": "Test",
   "lastName": "User",
-  "email": "test@example.com",
-  "tenantId": 1
+  "email": "test@example.com"
 }
 ```
 
