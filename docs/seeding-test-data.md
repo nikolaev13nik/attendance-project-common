@@ -235,7 +235,7 @@ shows up in a response.
 
 | Symptom | Cause |
 | --- | --- |
-| `relation "timetracking.att_work_sessions" does not exist` | TimeTracking never started against this DB — Hibernate `ddl-auto=update` creates the tables on first boot |
+| `relation "timetracking.att_work_sessions" does not exist` | TimeTracking never started against this DB — Flyway creates the tables on first boot |
 | `permission denied for schema timetracking` | connected as `accounting_user` or another service account; use `-U postgres` |
 | `duplicate key value violates unique constraint "uq_att_user_leave_days"` | the plain file was applied twice with the `DELETE` lines removed |
 | `no unique or exclusion constraint matching the ON CONFLICT specification` | `uq_att_user_leave_days` is missing; check with `\d timetracking.att_user_leave_days` |

@@ -313,9 +313,8 @@ In the connection settings, PostgreSQL tab, tick **"Show all databases"**.
 `tenant_id`, `user_id`, `leave_date`, `vacation_amount`, `sick_amount`, with a
 unique constraint on `(tenant_id, user_id, leave_date)`. A `NULL` amount means
 that kind of leave was not taken. If you still see `leave_type` and `amount`
-columns, the database predates that change: Hibernate's `ddl-auto=update` adds
-columns but cannot replace a primary key, so the table has to be dropped and
-left to be recreated on the next start.
+columns, the database predates Flyway: drop the service's tables once and let
+Flyway rebuild them from `db/migration` on the next start.
 
 The services themselves connect as `accounting_user` / `timetracking_user`,
 which are granted rights **only on their own schema** — each service physically
