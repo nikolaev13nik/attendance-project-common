@@ -98,6 +98,8 @@ services:
     build:
       context: ../Attendance-TimeTracking
       dockerfile: Dockerfile.dev
+      secrets:
+        - maven_settings
     image: timetracking:local
     container_name: attendance-timetracking
     restart: unless-stopped
