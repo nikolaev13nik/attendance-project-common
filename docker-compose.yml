@@ -139,6 +139,8 @@ services:
     build:
       context: ../Attendance-AI-Assistance
       dockerfile: Dockerfile.dev
+      secrets:
+        - maven_settings
     image: aiassistance:local
     container_name: attendance-aiassistance
     restart: "no"
