@@ -144,6 +144,18 @@ path added here appears in the AWS render automatically. Copying the list into t
 file would create a second one that silently drifts — the trap with list values is
 that an override replaces the whole list rather than merging it.
 
+### The one exception: the sign-up rate limit (GKE only)
+
+`templates/ingress-signup-limit.yaml` renders a second Ingress, `attendance-signup`, only when
+`ingress.signupLimit.enabled` is true, which only `values-gcp.yaml` sets. It routes `/account/signup`
+(`pathType: Exact`, so it outranks the `/account` prefix) to Accounting with ingress-nginx's
+`limit-rpm` and `limit-burst-multiplier` annotations: by default a burst of 5 sign-ups, then 1 a minute, per
+client address, answered with 429 before Accounting sees the request. It is a separate Ingress because nginx
+applies those annotations to a whole Ingress, and logins and the rest of the API must not be throttled. The
+annotations are nginx's, so the template is not meant for Traefik or the ALB. The limit counts by client
+address, so it only works when the nginx controller sees real visitor addresses; if every request appears to
+come from one address, set `externalTrafficPolicy: Local` on the controller's Service.
+
 ---
 
 ## Failure mode worth recognising: a missing Secret installs "successfully"

@@ -10,3 +10,6 @@ ingress:
 
   tls:
     secretName: attendance-tls
+
+  signupLimit:
+    enabled: true

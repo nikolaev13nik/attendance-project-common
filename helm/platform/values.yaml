@@ -60,6 +60,11 @@ ingress:
   host: attendance.local
   annotations: {}
 
+  signupLimit:
+    enabled: false
+    perMinute: 1
+    burstMultiplier: 5
+
   paths:
     - path: /account
       service: accounting

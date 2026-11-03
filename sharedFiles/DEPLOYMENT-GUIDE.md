@@ -199,7 +199,7 @@ Attendance-Gui-App/helm/gui/                   (same shape, minus configmap.yaml
 | --- | --- | --- | --- |
 | `attendance-config` | what **both** services need: `POSTGRES_HOST`, `KAFKA_BOOTSTRAP_SERVERS`, `ATTENDANCE_ACCOUNTING_BASE_URL` | the **platform** chart | edit `helm/platform/values.yaml`, `helm upgrade platform` |
 | `accounting-config`<br>`timetracking-config`<br>`aiassistance-config` | knobs only that service reads: JWT lifetime, client timeouts, SMTP host/sender | that **service's own** chart | edit the service's `values.yaml`, commit, push |
-| `attendance-secrets` | all passwords, the JWT signing key, the SMTP credentials | **nobody** — created by hand | `kubectl create secret ... --from-env-file=.env` |
+| `attendance-secrets` | all passwords, the JWT signing key, the Turnstile secret (`CAPTCHA_SECRET`), the SMTP credentials | **nobody** — created by hand | `kubectl create secret ... --from-env-file=.env` |
 | *(the GUI has neither)* | nothing. Its backend origin is whatever origin served the page, which the **ingress** decides; everything else is compiled into the bundle at `vite build` | — | rebuild the image |
 
 A value only one service reads must not go in `attendance-config`: that would force
